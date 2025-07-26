@@ -1,69 +1,68 @@
-import { useState } from 'react'
-import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { FetchNotesResponse } from '../../types/note'
-import { fetchNotes } from '../../services/noteService'
-import SearchBox from '../SearchBox/SearchBox'
-import NoteList from '../NoteList/NoteList'
-import Pagination from '../Pagination/Pagination'
-import Modal from '../Modal/Modal'
-import NoteForm from '../NoteForm/NoteForm'
-import css from './App.module.css'
+import { useState } from 'react';
+import { keepPreviousData, useQuery } from '@tanstack/react-query';
+import { fetchNotes } from '../../services/noteService';
+import { useDebouncedCallback } from 'use-debounce';
+import NoteList from '../NoteList/NoteList';
+import Paginaition from '../Pagination/Pagination';
+import SearchBox from '../SearchBox/SearchBox';
+import Modal from '../Modal/Modal';
+import NoteForm from '../NoteForm/NoteForm';
+import css from '../App/App.module.css';
+import ErrorMessage from '../ErrorMessage/ErrorMessage';
+import Loader from '../Loader/Loader';
 
 export default function App() {
-  const [search, setSearch] = useState('')
-  const [page, setPage] = useState(1)
-  const [isOpen, setIsOpen] = useState(false)
-  const queryClient = useQueryClient()
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [debouncedSearch, setDebouncedSearch] = useState('');
+  const [modalIsOpen, setModalIsOpen] = useState(false);
 
-  const { data, isLoading, isError } = useQuery<FetchNotesResponse, Error>({
-    queryKey: ['notes', page, search],
-    queryFn: () => fetchNotes(page, 12, search),
-  })
+  const handleSearch = useDebouncedCallback((search: string) => { setDebouncedSearch(search) }, 300);
 
-  const totalPages = data?.totalPages || 0
-  const notes = data?.notes || []
+  const handleSearchCange = (search: string) => {
+    setSearch(search);
+    setPage(1);
+    handleSearch(search);
+  };
 
-  const handleSearch = (q: string) => {
-    setSearch(q)
-    setPage(1)
+
+  const { data, isLoading, isError, isSuccess } = useQuery({
+    queryKey: ['notes', page, debouncedSearch],
+    queryFn: () => fetchNotes({
+      page,
+      perPage: 12,
+      search: debouncedSearch,
+    }),
+    placeholderData: keepPreviousData
   }
-
-  const handlePageChange = (p: number) => setPage(p)
-
-  const handleSuccess = () => {
-    setIsOpen(false)
-    queryClient.invalidateQueries({ queryKey: ['notes', page, search] })
-  }
+  );
 
   return (
     <div className={css.app}>
       <header className={css.toolbar}>
-        <SearchBox onSearch={handleSearch} />
-        <button onClick={() => setIsOpen(true)} className={css.createButton}>
-          Create note
-        </button>
-      </header>
-
-      {isLoading ? (
-        <p>Loading...</p>
-      ) : isError ? (
-        <p>Error loading notes.</p>
-      ) : (
-        <>
-          <NoteList notes={notes} />
-          <Pagination
-            totalPages={totalPages}
+        <SearchBox value={search} onChange={handleSearchCange} />
+        {data && data.total_pages > 1 && (
+          <Paginaition
             currentPage={page}
-            onPageChange={handlePageChange}
+            totalPages={data.total_pages}
+            onPageChange={setPage}
           />
-        </>
-      )}
-
-      {isOpen && (
-        <Modal onClose={() => setIsOpen(false)}>
-          <NoteForm onSuccess={handleSuccess} />
+        )}
+        <button className={css.button} type='button' onClick={() => setModalIsOpen(true)}>Create +</button>
+      </header>
+        {isLoading && <Loader />}
+        {isError && <ErrorMessage />}
+      {isSuccess && data?.data?.length > 0 ? (
+        <NoteList notes={data.data} />)
+        : (
+          <p>No notes found</p>
+        )
+      }
+      {modalIsOpen && (
+        <Modal onClose={() => setModalIsOpen(false)}>
+          <NoteForm onClose={() => setModalIsOpen(false)} />
         </Modal>
       )}
     </div>
-  )
-}
+  );
+};
